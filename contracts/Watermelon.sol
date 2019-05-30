@@ -1,8 +1,12 @@
 pragma solidity ^0.5.2;
+pragma experimental ABIEncoderV2;
 
 import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity/contracts/math/SafeMath.sol";
 
 contract Watermelon is Ownable {
+
+    using SafeMath for uint256;
 
     event PostCreated(uint256 _id, string _title);
     event VoteSubmitted(uint256 _postId);
@@ -23,6 +27,9 @@ contract Watermelon is Ownable {
         uint votesOption1;
         uint votesOption2;
     }
+
+    // The amount of posts returned on each request to getPostsPage()
+    uint constant _postsPerPage = 10;
 
     Post[] private _posts;
     
@@ -72,6 +79,7 @@ contract Watermelon is Ownable {
     }
 
     function getPostForId(uint _id) view public returns(
+        uint,
         address,
         string memory,
         string memory,
@@ -84,16 +92,58 @@ contract Watermelon is Ownable {
 
         require(_id >= 0 && _id < _posts.length);
         Post memory post = _posts[_id];
-        return (post.owner, post.title, post.option1Name, post.image1Hash, post.option2Name, post.image2Hash, post.dueDate, post.votesOption1, post.votesOption2);
+        return (_id, post.owner, post.title, post.option1Name, post.image1Hash, post.option2Name, post.image2Hash, post.dueDate, post.votesOption1, post.votesOption2);
+    }
+
+    function getPostPage(uint _page) view public returns(
+        uint,
+        uint[] memory,
+        string[] memory,
+        string[] memory,
+        string[] memory) {
+
+        if (_page.mul(_postsPerPage) >= _posts.length) {
+            // We know that with the given page we will not be able to retrieve a single Post
+            return (
+                0,
+                new uint[](0),
+                new string[](0),
+                new string[](0),
+                new string[](0));
+        }
+    
+        // 1-based calculations
+        uint index = _posts.length - _page.mul(_postsPerPage);
+        
+        uint size = index;
+        if (index >= _postsPerPage) {
+            size = _postsPerPage;
+        }
+        
+        uint[] memory ids = new uint[](size);
+        string[] memory titles = new string[](size);
+        string[] memory option1Hashes = new string[](size);
+        string[] memory option2Hashes = new string[](size);
+
+        uint counter = 0;
+        for (uint counter = 0; counter < size; counter++) {
+            index = index.sub(1);
+            Post memory post = _posts[index];
+            ids[counter] = index;
+            titles[counter] = post.title;
+            option1Hashes[counter] = post.image1Hash;
+            option2Hashes[counter] = post.image2Hash;
+        }
+        return (size, ids, titles, option1Hashes, option2Hashes);
     }
 
     function voteOnPost(uint _postId, uint8 _vote) public payable {
-        require(msg.value >= _voteFee);
-        require(_postId < _posts.length);
-        require(_vote >= 0 && _vote <= 1);
+        require(msg.value >= _voteFee, "Not enough to pay fee");
+        require(_postId < _posts.length, "Invalid post id");
+        require(_vote >= 0 && _vote <= 1, "Invalid vote option");
 
         Post storage post = _posts[_postId];
-        require(post._usedAddress[msg.sender] == false);
+        require(post._usedAddress[msg.sender] == false, "Cannot vote twice");
         
         if (_vote == 0) {
             post.votesOption1++;
